@@ -16,8 +16,6 @@ A high-performance, modern REST API built with **[FastAPI](https://fastapi.tiang
 
 ---
 
-## 🧱 Project Structure
+## 🧱 Run the Server
 
-Run the Server
-Using Uvicorn
 uvicorn app.main:app --reload
