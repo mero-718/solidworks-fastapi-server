@@ -1,0 +1,88 @@
+# ============================
+# FastAPI / Python .gitignore
+# ============================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.*
+
+# PyInstaller
+*.spec
+
+# Logs and runtime files
+*.log
+*.pid
+*.seed
+*.out
+*.bak
+*.swp
+*.sqlite3
+*.db
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# MyPy / Pylint / Ruff / Black
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+ruff_cache/
+.black/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# IDE / Editor folders
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.bak
+docker-compose.override.yml
+.dockerignore
+
+# Build / Distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# FastAPI specific
+# (optional: if you use local uploads or temp files)
+uploads/
+tmp/
+temp/
+
+# VS Code settings (optional)
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
