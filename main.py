@@ -155,3 +155,140 @@ async def receive_attributes(
             os.unlink(tmp.name)
         except Exception:
             pass
+
+def forward_and_parse(cs_url: str, upload_path: str, upload_name: str, features: str, export_type: Optional[str], out_dir: Path):
+    params = {}
+    if export_type:
+        params["exportType"] = export_type
+
+    files = {"file": (upload_name, open(upload_path, "rb"), "application/octet-stream")}
+    data = {"features": features or "[]"}
+
+    try:
+        resp = requests.post(cs_url, params=params, files=files, data=data, timeout=300)
+    finally:
+        try:
+            files["file"][1].close()
+        except Exception:
+            pass
+
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"Upstream service returned {resp.status_code}: {resp.text}")
+
+    content_type = resp.headers.get("Content-Type", "")
+    parts_meta = []
+    info_json = None
+
+    # If not multipart, save whole body as a single file
+    if not content_type.startswith("multipart/"):
+        out_path = out_dir / (upload_name or "output.bin")
+        out_path.write_bytes(resp.content)
+        parts_meta.append({
+            "name": None,
+            "filename": out_path.name,
+            "path": str(out_path),
+            "content_type": resp.headers.get("Content-Type"),
+            "size": out_path.stat().st_size
+        })
+        return {"parts": parts_meta, "info": None}
+
+    # Parse multipart response
+    mp = decoder.MultipartDecoder(resp.content, content_type)
+
+    for i, part in enumerate(mp.parts, start=1):
+        disposition = part.headers.get(b"Content-Disposition", b"").decode(errors="ignore")
+        ct = part.headers.get(b"Content-Type", b"application/octet-stream").decode(errors="ignore")
+
+        # extract name and filename from content-disposition
+        filename = None
+        name = None
+        for kv in disposition.split(";"):
+            if "=" not in kv:
+                continue
+            k, v = kv.strip().split("=", 1)
+            v = v.strip().strip('"')
+            if k.strip().lower() == "filename":
+                filename = v
+            if k.strip().lower() == "name":
+                name = v
+
+        # JSON info part detection
+        if ct.startswith("application/json") or (filename and filename.lower().endswith(".json")) or name == "info":
+            try:
+                info_json = json.loads(part.content.decode("utf-8"))
+                # also save info.json to disk for convenience
+                info_path = out_dir / "info.json"
+                info_path.write_text(json.dumps(info_json, indent=2), encoding="utf-8")
+                parts_meta.append({
+                    "name": name,
+                    "filename": "info.json",
+                    "path": str(info_path),
+                    "content_type": "application/json",
+                    "size": info_path.stat().st_size
+                })
+                continue
+            except Exception:
+                # fallback to saving raw part if JSON decode fails
+                pass
+
+        # ensure filename
+        if not filename:
+            filename = name or f"part_{i}"
+
+        # sanitize filename basic (remove path separators)
+        filename = filename.replace("/", "_").replace("\\", "_")
+
+        out_path = out_dir / filename
+        out_path.write_bytes(part.content)
+
+        parts_meta.append({
+            "name": name,
+            "filename": filename,
+            "path": str(out_path),
+            "content_type": ct,
+            "size": out_path.stat().st_size
+        })
+
+    return {"parts": parts_meta, "info": info_json}
+
+
+@app.post("/fetch-model")
+async def fetch_model(file: UploadFile = File(...), features: str = Form("[]"), exportType: Optional[str] = None):
+    # Create a per-request subfolder under tmp next to main.py
+    BASE_DIR = Path(__file__).resolve().parent
+    TMP_ROOT = BASE_DIR / "tmp"
+    TMP_ROOT.mkdir(parents=True, exist_ok=True)
+
+    req_id = uuid.uuid4().hex
+    req_dir = TMP_ROOT / req_id
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save uploaded file to request folder
+    upload_path = req_dir / file.filename
+    try:
+        content = await file.read()
+        upload_path.write_bytes(content)
+
+        # Run blocking network + parsing in thread pool
+        result = await asyncio.to_thread(
+            forward_and_parse,
+            CSHARP_REBUILD_URL,
+            str(upload_path),
+            file.filename,
+            features,
+            exportType,
+            req_dir
+        )
+
+        # Return metadata and paths (absolute) where files are saved
+        return JSONResponse({
+            "request_id": req_id,
+            "tmp_dir": str(req_dir),
+            "parts": result["parts"],
+            "info": result.get("info")
+        })
+    except HTTPException:
+        raise
+    except Exception as ex:
+        # If something goes wrong, try to keep files for inspection (do not delete)
+        raise HTTPException(status_code=500, detail=str(ex))

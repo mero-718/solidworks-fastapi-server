@@ -86,3 +86,7 @@ temp/
 .vscode/settings.json
 .vscode/launch.json
 .vscode/tasks.json
+
+# 3D model outputs (STL) - ignore generated/large binaries
+*.stl
+output.stl
